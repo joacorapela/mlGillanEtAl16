@@ -20,72 +20,6 @@ def getSubjectData(subjectFilename, columns_names, index_colname, prev_line_stri
     subject_data = subject_data.set_index(index_colname)
     return subject_data
 
-def buidStage2ValueFunction(alpha, initial_value, trials, s2_responses,
-                            states, state_colname, s2_response_colname,
-                            reward_colname, subject_data):
-    # Q_stage2 \in states x s2_responses x n_trials
-    n_trials = len(trials)
-    Q_stage2 = torch.empty((len(states), len(s2_responses), len(trials)),
-                           dtype=torch.double)
-    Q_stage2[:,:,0] = initial_value
-    for t in range(1, n_trials):
-        Q_stage2[:,:,t] = (1-alpha)*Q_stage2[:,:,t-1]
-
-        trial_s2_response = subject_data.iloc[t][s2_response_colname]
-        s2_response_index = np.where(s2_responses==trial_s2_response)[0]
-        trial_state = subject_data.iloc[t][state_colname]
-        state_index = np.where(states==trial_state)[0]
-        Q_stage2[state_index, s2_response_index, t] += \
-            subject_data.iloc[t][reward_colname]
-    return Q_stage2
-
-def mostProbableStateForR1(r1):
-    if r1 == "left":
-        state = 2
-    elif r1 == "right":
-        state = 3
-    else:
-        raise ValueError("r1 should be 2 or 3")
-    return state
-
-def buildModelBasedValueFunction(Q_stage2, s1_responses):
-    n_trials = Q_stage2.shape[2]
-    n_r1 = len(s1_responses)
-    Q_MB = torch.empty((n_r1, n_trials), dtype=torch.double)
-
-    for r1_index in range(n_r1):
-        for t in range(n_trials):
-            mpState_for_r1 = mostProbableStateForR1(r1=s1_responses[r1_index])
-            Q_MB[r1_index, t] = torch.max(Q_stage2[mpState_for_r1, :, t])
-    return Q_MB
-
-def buildProbStateGivenS1Response(states, s1_responses):
-    # p_state_given_r1 \in states x s1_responses
-    p_state_given_r1 = torch.empty((2,2), dtype=torch.double)
-    state_2_index = np.where(states==2)[0]
-    state_3_index = np.where(states==3)[0]
-    s1_response_left_index = np.where(states=="left")[0]
-    s1_response_right_index = np.where(states=="right")[0]
-    p_state_given_r1[state_2_index, s1_response_left_index] = 0.7
-    p_state_given_r1[state_2_index, s1_response_right_index] = 0.3
-    p_state_given_r1[state_3_index, s1_response_left_index] = 0.3
-    p_state_given_r1[state_3_index, s1_response_right_index] = 0.7
-    return p_state_given_r1
-
-def buildProbStateGivenResponses(beta_stage2, Q_stage2, p_state_given_r1):
-    # p_state_given_r1 \in states x s1_responses x s2_responses x n_trials
-    n_states = p_state_given_r1.shape[0]
-    n_r1 = p_state_given_r1.shape[1]
-    n_trials = Q_stage2.shape[2]
-    p_state_given_rs = torch.empty((n_states, nS1Responses,
-                                          nS2responses, n_trials), dtype=double)
-    for state_index in range(n_states):
-        for r1_index in range(n_r1):
-            p_state_given_rs[state_index, r1_index, :, :] = \
-                torch.exp(beta_stage2*Q_stage2[state_index, :, :])* \
-                p_state_given_r1[state_index, r1_index]
-    return p_state_given_rs
-
 def main(argv):
     parser = argparse.ArgumentParser()
     parser.add_argument("--subject_filename", help="subject filenane",
@@ -111,11 +45,18 @@ def main(argv):
     parser.add_argument("--prev_line_string", 
                         help="text in line preceding the data", 
                         default="twostep_instruct_9")
+    parser.add_argument("--init_value_function", 
+                        help="initial value for value functions",
+                        type=int, default=0)
 
     args = parser.parse_args()
 
     alpha = 0.3
     beta_stage2 = 0.5
+    beta_MB = 0.5
+    beta_MF0 = 0.5
+    beta_MF1 = 0.5
+    beta_stick = 1.0
 
     # get arguments
     subjectFilename = args.subject_filename
@@ -126,32 +67,67 @@ def main(argv):
     s2_response_colname = args.s2_response_colname
     reward_colname = args.reward_colname
     prev_line_string = args.prev_line_string
+    init_value_function = args.init_value_function
 
     subject_data = getSubjectData(subjectFilename=subjectFilename,
                                   columns_names=columns_names,
                                   index_colname=index_colname,
                                   prev_line_string=prev_line_string)
     trials = subject_data.index
-    states = subject_data[state_colname].unique()
+    states = np.sort(subject_data[state_colname].unique())
     s2_responses = subject_data[s2_response_colname].unique()
     s1_responses = subject_data[s1_response_colname].unique()
 
-    Q_stage2 = buidStage2ValueFunction(alpha=alpha, initial_value=0,
-                                      trials=trials, states=states,
-                                      s2_responses=s2_responses,
-                                      state_colname=state_colname,
-                                      s2_response_colname=s2_response_colname,
-                                      reward_colname=reward_colname,
-                                      subject_data=subject_data)
+    Q_stage2 = buidStage2ValueFunction(alpha=alpha,
+                                       initial_value=init_value_function,
+                                       trials=trials, states=states,
+                                       s2_responses=s2_responses,
+                                       state_colname=state_colname,
+                                       s2_response_colname=s2_response_colname,
+                                       reward_colname=reward_colname,
+                                       subject_data=subject_data)
     Q_MB = buildModelBasedValueFunction(Q_stage2=Q_stage2,
-                                        s1_responses=s1_responses)
+                                        s1_responses=s1_responses,
+                                        states=states)
+    Q_MF0 = buildModelFree0ValueFunction(alpha=alpha,
+                                         initial_value=init_value_function,
+                                         Q_stage2=Q_stage2,
+                                         s1_responses=s1_responses,
+                                         s2_responses=s2_responses,
+                                         states=states,
+                                         state_colname=state_colname,
+                                         s1_response_colname=
+                                          s1_response_colname,
+                                         s2_response_colname=
+                                          s2_response_colname,
+                                         subject_data=subject_data)
+    Q_MF1 = buildModelFree1ValueFunction(alpha=alpha, 
+                                         initial_value=init_value_function,
+                                         Q_stage2=Q_stage2,
+                                         s1_responses=s1_responses,
+                                         s2_responses=s2_responses,
+                                         states=states, 
+                                         s1_response_colname=
+                                          s1_response_colname,
+                                         reward_colname=reward_colname,
+                                         subject_data=subject_data)
 
-    p_state_given_r1 = buildProbStateGivenS1Response(states=states,
-                                                     s1_responses=s1_responses)
-    p_state_given_rs = buildProbStateGivenResponses(beta_stage2=beta_stage2,
-                                                     Q_stage2=Q_stage2,
-                                                     p_state_given_r1=
-                                                      p_state_given_r1)
+    p_s_given_r1 = buildPStateGivenS1Response(states=states,
+                                              s1_responses=s1_responses)
+    p_s_given_rs = buildPStateGivenResponses(beta_stage2=beta_stage2,
+                                             Q_stage2=Q_stage2,
+                                             p_s_given_r1=p_s_given_r1)
+    logP_r2_given_s = beta_stage2*Q_stage2
+    logP_r1 = buildLogPR1(Q_MB=Q_MB, Q_MF0=Q_MF0, Q_MF1=Q_MF1, beta_MB=beta_MB,
+                          beta_MF0=beta_MF0, beta_MF1=beta_MF1,
+                          s1_responses=s1_responses, beta_stick=beta_stick,
+                          subject_data=subject_data)
+    logP_s_rs = buildLogPStateResponses(logP_r2_given_s=logP_r2_given_s,
+                                        p_s_given_r1=p_s_given_r1,
+                                        logP_r1=logP_r1, states=states,
+                                        s1_responses=s1_responses)
+    e_logP_s_rs = torch.sum(p_s_given_rs*logP_s_rs)/torch.numel(p_s_given_rs)
+
     pdb.set_trace()
 
 if __name__=="__main__":
