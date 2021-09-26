@@ -31,16 +31,16 @@ class DawRLmodel:
         Q_stage2 = torch.empty((len(states), len(s2_responses), len(trials)),
                                dtype=torch.double)
         Q_stage2[:,:,0] = initial_value
-        for t in range(1, n_trials):
-            Q_stage2[:,:,t] = (1-alpha)*Q_stage2[:,:,t-1].clone()
+        for tp1 in range(1, n_trials):
+            Q_stage2[:,:,tp1] = (1-alpha)*Q_stage2[:,:,tp1-1].clone()
 
-            trial_state = subject_data.iloc[t][state_colname]
+            trial_state = subject_data.iloc[tp1-1][state_colname]
             state_index = np.where(states==trial_state)[0]
-            trial_s2_response = subject_data.iloc[t][s2_response_colname]
+            trial_s2_response = subject_data.iloc[tp1-1][s2_response_colname]
             s2_response_index = np.where(s2_responses==trial_s2_response)[0]
-            Q_stage2[state_index, s2_response_index, t] = \
-                Q_stage2[state_index, s2_response_index, t].clone() + \
-                subject_data.iloc[t][reward_colname]
+            Q_stage2[state_index, s2_response_index, tp1] = \
+                Q_stage2[state_index, s2_response_index, tp1].clone() + \
+                subject_data.iloc[tp1-1][reward_colname]
         return Q_stage2
 
     def mostProbableStateForR1(self, r1):
@@ -58,9 +58,9 @@ class DawRLmodel:
         Q_MB = torch.empty((n_r1, n_trials), dtype=torch.double)
 
         for r1_index in range(n_r1):
+            state = self.mostProbableStateForR1(r1=s1_responses[r1_index])
+            state_index = np.where(states==state)[0]
             for t in range(n_trials):
-                state = self.mostProbableStateForR1(r1=s1_responses[r1_index])
-                state_index = np.where(states==state)[0]
                 Q_MB[r1_index, t] = torch.max(Q_stage2[state_index, :, t])
         return Q_MB
 
@@ -73,18 +73,18 @@ class DawRLmodel:
         Q_MF0 = torch.empty((n_r1, n_trials), dtype=torch.double)
 
         Q_MF0[:,0] = initial_value
-        for t in range(1, n_trials):
-            Q_MF0[:,t] = (1-alpha)*Q_MF0[:,t-1].clone()
+        for tp1 in range(1, n_trials):
+            Q_MF0[:,tp1] = (1-alpha)*Q_MF0[:,tp1-1].clone()
 
-            trial_state = subject_data.iloc[t][state_colname]
+            trial_state = subject_data.iloc[tp1-1][state_colname]
             state_index = np.where(states==trial_state)[0]
-            trial_s1_response = subject_data.iloc[t][s1_response_colname]
+            trial_s1_response = subject_data.iloc[tp1-1][s1_response_colname]
             s1_response_index = np.where(s1_responses==trial_s1_response)[0]
-            trial_s2_response = subject_data.iloc[t][s2_response_colname]
+            trial_s2_response = subject_data.iloc[tp1-1][s2_response_colname]
             s2_response_index = np.where(s2_responses==trial_s2_response)[0]
-            Q_MF0[s1_response_index, t] = Q_MF0[s1_response_index, t].clone() + \
-                                          Q_stage2[state_index,
-                                                   s2_response_index, t]
+            Q_MF0[s1_response_index, tp1] = \
+                Q_MF0[s1_response_index, tp1].clone() + \
+                Q_stage2[state_index, s2_response_index, tp1-1]
         return Q_MF0
 
     def buildModelFree1ValueFunction(self, alpha, initial_value, Q_stage2,
@@ -96,14 +96,14 @@ class DawRLmodel:
         Q_MF1 = torch.empty((n_r1, n_trials), dtype=torch.double)
 
         Q_MF1[:,0] = initial_value
-        for t in range(1, n_trials):
-            Q_MF1[:,t] = (1-alpha)*Q_MF1[:,t-1].clone()
+        for tp1 in range(1, n_trials):
+            Q_MF1[:,tp1] = (1-alpha)*Q_MF1[:,tp1-1].clone()
 
-            trial_s1_response = subject_data.iloc[t][s1_response_colname]
+            trial_s1_response = subject_data.iloc[tp1-1][s1_response_colname]
             s1_response_index = np.where(s1_responses==trial_s1_response)[0]
-            trial_reward = subject_data.iloc[t][reward_colname]
-            Q_MF1[s1_response_index, t] = Q_MF1[s1_response_index, t].clone() + \
-                                          trial_reward
+            trial_reward = subject_data.iloc[tp1-1][reward_colname]
+            Q_MF1[s1_response_index, tp1] = Q_MF1[s1_response_index, tp1].clone() + \
+                                            trial_reward
         return Q_MF1
 
     def buildPStateGivenS1Response(self, states, s1_responses):
@@ -152,11 +152,15 @@ class DawRLmodel:
             r1_prev_t_index = np.where(s1_responses==r1_prev_t)[0]
             logP_r1[r1_prev_t_index, t] = logP_r1[r1_prev_t_index, t].clone() + \
                                           beta_stick
+            assert(not logP_r1[r1_prev_t_index, t].isnan())
+            # print("logP_r1 ==", logP_r1[r1_prev_t_index, t].item())
+            # import pdb; pdb.set_trace()
         p_r1 = torch.exp(logP_r1)
         normalization_factor = torch.sum(p_r1, axis=0)
         p_r1 = p_r1/normalization_factor
-        logP_r1 = torch.log(p_r1)
-        return logP_r1
+        nLogP_r1 = torch.log(p_r1)
+        assert(not any(torch.reshape(nLogP_r1, (-1,)).isnan()))
+        return nLogP_r1
 
     def buildLogPStateResponses(self, logP_r2_given_s, p_s_given_r1, logP_r1,
                                 states, s1_responses):
@@ -172,10 +176,13 @@ class DawRLmodel:
                         logP_r2_given_s[s_index, :, :] + \
                         torch.log(p_s_given_r1[s_index, r1_index]) + \
                         logP_r1[r1_index, :]
+                assert(not any(torch.reshape(logP_states_rs[s_index, r1_index, :, :], (-1,)).isnan()))
         return logP_states_rs
 
     def complete_ll_expectation(self):
         alpha = self._params[0]
+        # print("alpha = ", alpha.item())
+        assert(alpha>=0.01)
         beta_stage2 = self._params[1]
         beta_MB = self._params[2]
         beta_MF0 = self._params[3]
@@ -237,6 +244,7 @@ class DawRLmodel:
             logP_r1=logP_r1, states=states, s1_responses=s1_responses)
         answer = torch.sum(p_s_given_rs*logP_s_rs)/torch.numel(p_s_given_rs)
         # print("eLL={:f}".format(answer)); print("params:"); print(self._params); import pdb; pdb.set_trace()
-        print("eLL={:f}".format(answer)); print("params:"); print(self._params)
+        print("eLL = {:f}".format(answer)); print("params:"); print(self._params)
+        assert(not answer.isnan())
         return answer
 
