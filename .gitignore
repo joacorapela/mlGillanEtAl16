@@ -1,4 +1,4 @@
 *~
 *.swp
-src/__pycache__/*
-slurm/outputs/*
+code/src/__pycache__/*
+code/slurm/outputs/*
