@@ -149,36 +149,6 @@ class DawRLmodel:
                                             trial_reward
         return Q_MF1
 
-    def buildPStateGivenS1Response(self, states, r1s):
-        # p_s_given_r1 \in states x r1s
-        p_s_given_r1 = torch.empty((2,2), dtype=torch.double)
-        state_2_index = np.where(states==2)[0]
-        state_3_index = np.where(states==3)[0]
-        r1_left_index = np.where(r1s=="left")[0]
-        r1_right_index = np.where(r1s=="right")[0]
-        p_s_given_r1[state_2_index, r1_left_index] = 0.7
-        p_s_given_r1[state_2_index, r1_right_index] = 0.3
-        p_s_given_r1[state_3_index, r1_left_index] = 0.3
-        p_s_given_r1[state_3_index, r1_right_index] = 0.7
-        return p_s_given_r1
-
-    def buildPStateGivenResponses(self, beta_stage2, Q_stage2, p_s_given_r1):
-        # p_s_given_rs \in states x r1s x r2s x n_trials
-        n_states = p_s_given_r1.shape[0]
-        n_r1 = p_s_given_r1.shape[1]
-        n_r2 = Q_stage2.shape[1]
-        n_trials = Q_stage2.shape[2]
-        p_s_given_rs = torch.empty((n_states, n_r1, n_r2, n_trials),
-                                    dtype=torch.double)
-        for state_index in range(n_states):
-            for r1_index in range(n_r1):
-                p_s_given_rs[state_index, r1_index, :, :] = \
-                    torch.exp(beta_stage2*Q_stage2[state_index, :, :])* \
-                    p_s_given_r1[state_index, r1_index]
-        normalization_factor = torch.sum(p_s_given_rs, dim=0)
-        p_s_given_rs = p_s_given_rs/normalization_factor
-        return p_s_given_rs
-
     def buildLogPR2GivenState(self, Q_stage2, beta_stage2):
         uLogP_r2_given_s = beta_stage2*Q_stage2
         uP_r2_given_s = torch.exp(uLogP_r2_given_s)
@@ -205,85 +175,6 @@ class DawRLmodel:
         nLogP_r1 = torch.log(p_r1)
         assert(not any(torch.reshape(nLogP_r1, (-1,)).isnan()))
         return nLogP_r1
-
-    def buildLogPStateResponses(self, logP_r2_given_s, p_s_given_r1, logP_r1,
-                                states, r1s):
-        n_states = len(states)
-        n_r1 = p_s_given_r1.shape[1]
-        n_r2 = logP_r2_given_s.shape[1]
-        n_trials = logP_r2_given_s.shape[2]
-        logP_states_rs = torch.empty((n_states, n_r1, n_r2, n_trials),
-                                    dtype=torch.double)
-        for s_index in range(n_states):
-            for r1_index in range(n_r1):
-                logP_states_rs[s_index, r1_index, :, :] = \
-                        logP_r2_given_s[s_index, :, :] + \
-                        torch.log(p_s_given_r1[s_index, r1_index]) + \
-                        logP_r1[r1_index, :]
-                assert(not any(torch.reshape(logP_states_rs[s_index, r1_index, :, :], (-1,)).isnan()))
-        return logP_states_rs
-
-    def complete_ll_expectation(self):
-        alpha = self._params[0]
-        assert(alpha>=0.01)
-        beta_stage2 = self._params[1]
-        beta_MB = self._params[2]
-        beta_MF0 = self._params[3]
-        beta_MF1 = self._params[4]
-        beta_stick = self._params[5]
-
-        trials = self._subject_data.index
-        states = np.sort(self._subject_data[self._state_colname].unique())
-        r2s = self._subject_data[self._r2_colname].unique()
-        r1s = self._subject_data[self._r1_colname].unique()
-
-        Q_stage2 = self.buidStage2ValueFunction(
-            alpha=alpha, initial_value=self._init_value_function,
-            trials=trials, states=states, r2s=r2s,
-            state_colname=self._state_colname,
-            r2_colname=self._r2_colname,
-            reward_colname=self._reward_colname,
-            subject_data=self._subject_data)
-        Q_MB = self.buildModelBasedValueFunction(Q_stage2=Q_stage2,
-                                                 r1s=r1s,
-                                                 states=states)
-        Q_MF0 = self.buildModelFree0ValueFunction(
-            alpha=alpha, initial_value=self._init_value_function,
-            Q_stage2=Q_stage2, r1s=r1s,
-            r2s=r2s, states=states,
-            state_colname=self._state_colname,
-            r1_colname=self._r1_colname,
-            r2_colname=self._r2_colname,
-            subject_data=self._subject_data)
-        Q_MF1 = self.buildModelFree1ValueFunction(
-            alpha=alpha, initial_value=self._init_value_function,
-            Q_stage2=Q_stage2, r1s=r1s,
-            r2s=r2s, states=states,
-            r1_colname=self._r1_colname,
-            reward_colname=self._reward_colname,
-            subject_data=self._subject_data)
-
-        p_s_given_r1 = self.buildPStateGivenS1Response(
-            states=states, r1s=r1s)
-        p_s_given_rs = self.buildPStateGivenResponses(beta_stage2=beta_stage2,
-                                                      Q_stage2=Q_stage2,
-                                                      p_s_given_r1=p_s_given_r1)
-        logP_r2_given_s = self.buildLogPR2GivenState(Q_stage2=Q_stage2,
-                                                     beta_stage2=beta_stage2)
-        logP_r1 = self.buildLogPR1(Q_MB=Q_MB, Q_MF0=Q_MF0, Q_MF1=Q_MF1,
-                                   beta_MB=beta_MB, beta_MF0=beta_MF0,
-                                   beta_MF1=beta_MF1, r1s=r1s,
-                                   beta_stick=beta_stick,
-                                   r1_colname=self._r1_colname,
-                                   subject_data=self._subject_data)
-        logP_s_rs = self.buildLogPStateResponses(
-            logP_r2_given_s=logP_r2_given_s, p_s_given_r1=p_s_given_r1,
-            logP_r1=logP_r1, states=states, r1s=r1s)
-        answer = torch.sum(p_s_given_rs*logP_s_rs)/torch.numel(p_s_given_rs)
-        # print("eLL={:f}".format(answer)); print("params:"); print(self._params); import pdb; pdb.set_trace()
-        print("eLL = {:f}".format(answer)); print("params:"); print(self._params)
-        assert(not answer.isnan())
-        return answer
 
     def logLikelihood(self):
         alpha = self._params[0]
