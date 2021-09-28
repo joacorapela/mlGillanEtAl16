@@ -13,7 +13,7 @@ import utils
 def main(argv):
     parser = argparse.ArgumentParser()
     parser.add_argument("--subject_filename", help="subject filenane",
-                        default="../../gillan_model_assignment/individual_participant_data/3018Q3ZVOIQGSXZ9L4SKHNWVPJAART.csv")
+                        default="../../../gillan_model_assignment/individual_participant_data/3018Q3ZVOIQGSXZ9L4SKHNWVPJAART.csv")
     parser.add_argument("--alpha_0", help="initial value for parameter alpha",
                         type=float, default=0.5)
     parser.add_argument("--alpha_bounds", help="bounds for parameter alpha",
