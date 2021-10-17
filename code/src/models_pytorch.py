@@ -1,12 +1,62 @@
 
 import numpy as np
 import torch
+import gpytorch
 
-class DawRLmodel:
-    def __init__(self, subject_data, init_value_function, state_colname,
+class DawRLmodel(gpytorch.Module):
+    def __init__(self,
+                 alpha_0=alpha_0, alpha_bounds=alpha_bounds,
+                 beta_stage2_0=beta_stage2_0, beta_stage2_bounds=beta_stage2_bounds, 
+                 beta_MB_0=beta_MB_0, beta_MB_bounds=beta_MB_bounds, 
+                 beta_MF0_0=beta_MF0_0, beta_MF0_bounds=beta_MF0_bounds, 
+                 beta_MF1_0=beta_MF1_0, beta_MF1_bounds=beta_MF1_bounds, 
+                 beta_stick_0=beta_stick_0, beta_stick_bounds=beta_stick_bounds, 
+                 subject_data, init_value_function, state_colname,
                  r1_colname, r2_colname, reward_colname):
-        # params = [alpha, beta_stage2, beta_MB, beta_MF0, beta_MF1, beta_stick]
-        self._params = None
+        super(BayesianGPLVM, self).__init__()
+
+        # alpha_0
+        self.alpha_constraint = gpytorch.constraints.Interval(lower_bound=alpha_bounds[0], upper_bound=alpha_bounds[1])
+        self.register_parameter(
+            name="raw_alpha",
+            parameter=torch.nn.Parameter(self.alpha_constraint.inverse_transform(alpha_0)))
+        self.register_constraint("raw_alpha", self.alpha_constraint)
+
+        # beta_stage2_0
+        self.beta_stage2_constraint = gpytorch.constraints.Interval(lower_bound=beta_stage2_bounds[0], upper_bound=beta_stage2_bounds[1])
+        self.register_parameter(
+            name="raw_beta_stage2",
+            parameter=torch.nn.Parameter(self.beta_stage2_constraint.inverse_transform(beta_stage2_0)))
+        self.register_constraint("raw_beta_stage2", self.beta_stage2_constraint)
+
+        # beta_MB_0
+        self.beta_MB_constraint = gpytorch.constraints.Interval(lower_bound=beta_MB_bounds[0], upper_bound=beta_MB_bounds[1])
+        self.register_parameter(
+            name="raw_beta_MB",
+            parameter=torch.nn.Parameter(self.beta_MB_constraint.inverse_transform(beta_MB_0)))
+        self.register_constraint("raw_beta_MB", self.beta_MB_constraint)
+
+        # beta_MF0_0
+        self.beta_MF0_constraint = gpytorch.constraints.Interval(lower_bound=beta_MF0_bounds[0], upper_bound=beta_MF0_bounds[1])
+        self.register_parameter(
+            name="raw_beta_MF0",
+            parameter=torch.nn.Parameter(self.beta_MF0_constraint.inverse_transform(beta_MF0_0)))
+        self.register_constraint("raw_beta_MF0", self.beta_MF0_constraint)
+
+        # beta_MF1_0
+        self.beta_MF1_constraint = gpytorch.constraints.Interval(lower_bound=beta_MF1_bounds[0], upper_bound=beta_MF1_bounds[1])
+        self.register_parameter(
+            name="raw_beta_MF1",
+            parameter=torch.nn.Parameter(self.beta_MF1_constraint.inverse_transform(beta_MF1_0)))
+        self.register_constraint("raw_beta_MF1", self.beta_MF1_constraint)
+
+        # beta_stick_0
+        self.beta_stick_constraint = gpytorch.constraints.Interval(lower_bound=beta_stick_bounds[0], upper_bound=beta_stick_bounds[1])
+        self.register_parameter(
+            name="raw_beta_stick",
+            parameter=torch.nn.Parameter(self.beta_stick_constraint.inverse_transform(beta_stick_0)))
+        self.register_constraint("raw_beta_stick", self.beta_stick_constraint)
+
         self._subject_data = subject_data
         self._init_value_function = init_value_function
         self._state_colname=state_colname
@@ -28,17 +78,63 @@ class DawRLmodel:
                                                  subject_data=subject_data)
         r1s = self._subject_data[self._r1_colname].unique()
         self._selected_r1_indicator = \
-                self._buildSelectedR1Indicator(trials=self._trials,
-                                               r1s=self._r1s,
-                                               r1_colname=r1_colname,
-                                               subject_data=subject_data)
+            self._buildSelectedR1Indicator(trials=self._trials,
+                                           r1s=self._r1s,
+                                           r1_colname=r1_colname,
+                                           subject_data=subject_data)
     @property
-    def params(self):
-        return self._params
+    def alpha(self):
+        value = self.alpha_constraint.transform(self.raw_alpha)
+        return value
 
-    @params.setter
-    def params(self, params):
-        self._params = params
+    @alpha.setter
+    def alpha(self, value):
+        self.initialize(raw_alpha=self.alpha_constraint.inverse_transform(value))
+
+    @property
+    def beta_stage2(self):
+        value = self.beta_stage2_constraint.transform(self.raw_beta_stage2)
+        return value
+
+    @beta_stage2.setter
+    def beta_stage2(self, value):
+        self.initialize(raw_beta_stage2=self.beta_stage2_constraint.inverse_transform(value))
+
+    @property
+    def beta_MB(self):
+        value = self.beta_MB_constraint.transform(self.raw_beta_MB)
+        return value
+
+    @beta_MB.setter
+    def beta_MB(self, value):
+        self.initialize(raw_beta_MB=self.beta_MB_constraint.inverse_transform(value))
+
+    @property
+    def beta_MF0(self):
+        value = self.beta_MF0_constraint.transform(self.raw_beta_MF0)
+        return value
+
+    @beta_MF0.setter
+    def beta_MF0(self, value):
+        self.initialize(raw_beta_MF0=self.beta_MF0_constraint.inverse_transform(value))
+
+    @property
+    def beta_MF1(self):
+        value = self.beta_MF1_constraint.transform(self.raw_beta_MF1)
+        return value
+
+    @beta_MF1.setter
+    def beta_MF1(self, value):
+        self.initialize(raw_beta_MF1=self.beta_MF1_constraint.inverse_transform(value))
+
+    @property
+    def beta_stick(self):
+        value = self.beta_stick_constraint.transform(self.raw_beta_stick)
+        return value
+
+    @beta_stick.setter
+    def beta_stick(self, value):
+        self.initialize(raw_beta_stick=self.beta_stick_constraint.inverse_transform(value))
 
     def _buildSelectedR2GivenSIndicator(self, trials, r2s, states,
                                         state_colname, r2_colname,
@@ -177,12 +273,12 @@ class DawRLmodel:
         return nLogP_r1
 
     def logLikelihood(self):
-        alpha = self._params[0]
-        beta_stage2 = self._params[1]
-        beta_MB = self._params[2]
-        beta_MF0 = self._params[3]
-        beta_MF1 = self._params[4]
-        beta_stick = self._params[5]
+        alpha = self.alpha
+        beta_stage2 = self.beta_stage2
+        beta_MB = self.beta_MB
+        beta_MF0 = self.beta_MF0
+        beta_MF1 = self.beta_MF1
+        beta_stick = self.beta_stick
 
         Q_stage2 = self.buidStage2ValueFunction(
             alpha=alpha, initial_value=self._init_value_function,
