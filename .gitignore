@@ -1,4 +1,5 @@
 *~
+*.bak
 *.swp
 code/src/__pycache__/*
 code/slurm/outputs/*
