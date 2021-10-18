@@ -323,6 +323,14 @@ class DawRLmodel(gpytorch.Module):
         # import pdb; pdb.set_trace()
         return log_likelihood
 
-    def posterior(self, mu, nu2):
+    def logPosterior(self, mu, nu2):
         ll = self.logLikelihood()
+        lPrior = self.logPrior(mu=mu, nu2=nu2)
+        posterior = ll + prior
+        return posterior
+
+    def logPrior(self, mu, nu2):
+        parameters_tensor = torch.tensor(list(self.parameters()))
+        prior = -torch.sum((parameters_tensor-mu)**2/nu2)
+        return prior
 
