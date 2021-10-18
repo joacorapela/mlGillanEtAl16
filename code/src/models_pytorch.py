@@ -321,3 +321,7 @@ class DawRLmodel(gpytorch.Module):
         print("LL = {:f}".format(log_likelihood)); print("params:"); print(self._params)
         # import pdb; pdb.set_trace()
         return log_likelihood
+
+    def posterior(self, mu, nu2):
+        ll = self.logLikelihood()
+
