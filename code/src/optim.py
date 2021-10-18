@@ -3,6 +3,53 @@ import torch
 import scipy.optimize
 
 
+def approximatePosteriorWithIIDNormal(logPosteriorModel, prior_params,
+                                      max_iter):
+    x = list(logPosteriorModel.parameters())
+    def logPosteriorWrapper():
+        value = logPosteriorModel.logPosterior(prior_params=prior_params)
+        return value
+    max_res = optim.maximize_torch_LBFGS(x=x, eval_func=logPosteriorWrapper,
+                                         max_iter=max_iter)
+    max_x = max_res["maximum_x"]
+    maximum = max_res["maximum"]
+    # compute 2nd order derivatives of posterior
+    grad = torch.autograd.grad(maximum, max_x, create_graph=True)[0]
+    ones = torch.ones_like(max_x)
+    grad2 = torch.autograd.grad(grad, max_x, grad_outputs=ones,
+                                create_graph=True)[0]
+    #
+    mean = max_x
+    var = -1.0/grad2
+    return mean, var
+
+def huysEtAl11EM(logPosteriorModels, mu0, nu20, max_em_iter=100,
+                 max_approxPosterior_iter=50):
+    def eStep(muOld, nu2Old, logPosteriorModels, max_iter):
+        N = len(individualPosteriors)
+        m = torch.empty((len(mu0), N), dtype=torch.double)
+        Sigma = torch.empty((len(mu0), N), dtype=torch.double)
+        for i in range(N):
+            m[:,i], Sigma[:,i] = \
+                approximatePosteriorWithNormal(logPosteriorModel=
+                                                logPosteriorModels[i],
+                                               muOld=muOld, nu2Old=nu2Old,
+                                               max_iter=max_iter)
+        return m, Sigma
+
+    def mStep(m, Sigma):
+        mu = torch.mean(m, axis=0)
+        nu2 = 2*(torch.mean(m**2+Sigma)-mu**2)
+        return mu, nu2
+
+    mu = mu0
+    nu2 = nu20
+    for i in range(max_iter):
+        m, Sigma = eStep(muOld=mu, nu2Old=nu2, logPosteriorModels=logPosteriorModels,
+                         max_iter=max_approxPosterior_iter)
+        mu, nu2 = mStep(m=m, Sigma=Sigma)
+    return mu, nu2
+
 def minimize_scipy_LBFGSB(func, x0, bounds, optim_params):
     optim_res = scipy.optimize.minimize(fun=func, x0=x0, method="L-BFGS-B",
                                         jac=True, bounds=bounds,
