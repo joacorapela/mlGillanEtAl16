@@ -3,17 +3,18 @@ import numpy as np
 import torch
 import gpytorch
 
+
 class DawRLmodel(gpytorch.Module):
     def __init__(self,
-                 alpha_0=alpha_0, alpha_bounds=alpha_bounds,
-                 beta_stage2_0=beta_stage2_0, beta_stage2_bounds=beta_stage2_bounds, 
-                 beta_MB_0=beta_MB_0, beta_MB_bounds=beta_MB_bounds, 
-                 beta_MF0_0=beta_MF0_0, beta_MF0_bounds=beta_MF0_bounds, 
-                 beta_MF1_0=beta_MF1_0, beta_MF1_bounds=beta_MF1_bounds, 
-                 beta_stick_0=beta_stick_0, beta_stick_bounds=beta_stick_bounds, 
+                 alpha_0, alpha_bounds,
+                 beta_stage2_0, beta_stage2_bounds,
+                 beta_MB_0, beta_MB_bounds,
+                 beta_MF0_0, beta_MF0_bounds,
+                 beta_MF1_0, beta_MF1_bounds,
+                 beta_stick_0, beta_stick_bounds,
                  subject_data, init_value_function, state_colname,
                  r1_colname, r2_colname, reward_colname):
-        super(BayesianGPLVM, self).__init__()
+        super(DawRLmodel, self).__init__()
 
         # alpha_0
         self.alpha_constraint = gpytorch.constraints.Interval(lower_bound=alpha_bounds[0], upper_bound=alpha_bounds[1])
@@ -318,7 +319,7 @@ class DawRLmodel(gpytorch.Module):
             torch.sum(logP_r2_given_s*self._selected_r2_given_s_indicator)
         sum_selected_logP_r1 = torch.sum(logP_r1*self._selected_r1_indicator)
         log_likelihood = sum_selected_logP_r2_given_s+sum_selected_logP_r1
-        print("LL = {:f}".format(log_likelihood)); print("params:"); print(self._params)
+        print("LL = {:f}".format(log_likelihood)); print("params:"); print(list(self.parameters()))
         # import pdb; pdb.set_trace()
         return log_likelihood
 
