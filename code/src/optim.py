@@ -3,21 +3,22 @@ import torch
 import scipy.optimize
 
 
-def approximatePosteriorWithIIDNormal(logPosteriorModel, prior_params,
-                                      max_iter):
-    x = list(logPosteriorModel.parameters())
+def approximatePosteriorWithIIDNormal(logPosteriorModel, prior_params, max_iter):
     def logPosteriorWrapper():
         value = logPosteriorModel.logPosterior(prior_params=prior_params)
         return value
-    max_res = optim.maximize_torch_LBFGS(x=x, eval_func=logPosteriorWrapper,
-                                         max_iter=max_iter)
+    x = list(logPosteriorModel.parameters())
+    max_res = maximize_torch_LBFGS(x=x, eval_func=logPosteriorWrapper, max_iter=max_iter)
     max_x = max_res["maximum_x"]
-    maximum = max_res["maximum"]
     # compute 2nd order derivatives of posterior
-    grad = torch.autograd.grad(maximum, max_x, create_graph=True)[0]
-    ones = torch.ones_like(max_x)
-    grad2 = torch.autograd.grad(grad, max_x, grad_outputs=ones,
-                                create_graph=True)[0]
+    for i in range(len(max_x)):
+        max_x[i].requires_grad = True
+    maximum = logPosteriorWrapper()
+    grad = torch.autograd.grad(maximum, max_x[0] , create_graph=True)[0]
+    ones = torch.ones_like(max_x[0])
+    grad2 = torch.autograd.grad(grad, max_x, grad_outputs=ones, create_graph=True)[0]
+    for i in range(len(max_x)):
+        max_x[i].requires_grad = False
     #
     mean = max_x
     var = -1.0/grad2
