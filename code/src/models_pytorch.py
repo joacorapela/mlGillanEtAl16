@@ -5,8 +5,6 @@ import torch
 class DawRLmodel:
     def __init__(self, subject_data, init_value_function, state_colname,
                  r1_colname, r2_colname, reward_colname):
-        # params = [alpha, beta_stage2, beta_MB, beta_MF0, beta_MF1, beta_stick]
-        self._params = None
         self._subject_data = subject_data
         self._init_value_function = init_value_function
         self._state_colname=state_colname
@@ -33,12 +31,12 @@ class DawRLmodel:
                                                r1_colname=r1_colname,
                                                subject_data=subject_data)
     @property
-    def params(self):
-        return self._params
+    def likelihood_params(self):
+        return self._likelihood_params
 
-    @params.setter
-    def params(self, params):
-        self._params = params
+    @likelihood_params.setter
+    def likelihood_params(self, likelihood_params):
+        self._likelihood_params = likelihood_params
 
     def _buildSelectedR2GivenSIndicator(self, trials, r2s, states,
                                         state_colname, r2_colname,
@@ -177,12 +175,12 @@ class DawRLmodel:
         return nLogP_r1
 
     def logLikelihood(self):
-        alpha = self._params[0]
-        beta_stage2 = self._params[1]
-        beta_MB = self._params[2]
-        beta_MF0 = self._params[3]
-        beta_MF1 = self._params[4]
-        beta_stick = self._params[5]
+        alpha = self.likelihood_params[0]
+        beta_stage2 = self.likelihood_params[1]
+        beta_MB = self.likelihood_params[2]
+        beta_MF0 = self.likelihood_params[3]
+        beta_MF1 = self.likelihood_params[4]
+        beta_stick = self.likelihood_params[5]
 
         Q_stage2 = self.buidStage2ValueFunction(
             alpha=alpha, initial_value=self._init_value_function,
@@ -222,6 +220,20 @@ class DawRLmodel:
             torch.sum(logP_r2_given_s*self._selected_r2_given_s_indicator)
         sum_selected_logP_r1 = torch.sum(logP_r1*self._selected_r1_indicator)
         log_likelihood = sum_selected_logP_r2_given_s+sum_selected_logP_r1
-        print("LL = {:f}".format(log_likelihood)); print("params:"); print(self._params)
+        print("LL = {:f}".format(log_likelihood)); print("params:"); print(self.likelihood_params)
         # import pdb; pdb.set_trace()
         return log_likelihood
+
+    def logPosterior(self, prior_params):
+        mu = prior_params[0]
+        nu2 = prior_params[1]
+        ll = self.logLikelihood()
+        lPrior = self.logPrior(mu=mu, nu2=nu2)
+        posterior = ll + lPrior
+        return posterior
+
+    def logPrior(self, mu, nu2):
+        parameters_tensor = torch.tensor(list(self.likelihood_params))
+        prior = -torch.sum((parameters_tensor-mu)**2/(2*nu2))
+        return prior
+
