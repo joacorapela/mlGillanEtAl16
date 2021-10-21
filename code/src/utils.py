@@ -1,10 +1,12 @@
 
+import os
 import pandas as pd
 import torch
 
-def getSubjectData(subject_filename, columns_names, index_colname,
-                   prev_line_string):
-    f = open(subject_filename, "rt")
+def getSubjectData(subject_dirname, subject_filename, columns_names,
+                   index_colname, prev_line_string):
+    full_subject_filename = os.path.join(subject_dirname, subject_filename)
+    f = open(full_subject_filename, "rt")
     found = False
     line = f.readline()
     while line is not None and not found:
@@ -22,7 +24,7 @@ def wrap_torch_to_numpy_func(torch_func):
         x_torch = torch.from_numpy(x)
         x_torch.requires_grad = True
         value_torch = torch_func(x_torch)
-        value_torch.backward()
+        value_torch.backward(retain_graph=True)
         value = value_torch.detach().numpy()
         grad = x_torch.grad.detach().numpy()
 
