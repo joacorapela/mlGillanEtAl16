@@ -10,7 +10,7 @@ A report summarizing the results of using of this maximum likelhood estimation t
 
 ## Bayesian hierarchical random effect model
 
-A Python script to estimate the parameters of this model using a Bayesian hierarchical model in [Huys et al., 2011](https://journals.plos.org/ploscompbiol/article?id=10.1371/journal.pcbi.1002028) is given in [code/scripts/doHBIEstimation.py](code/scripts/doHBIEstimation.py).
+A Python script to estimate the parameters of this model using a Bayesian hierarchical model in [Huys et al., 2011](https://journals.plos.org/ploscompbiol/article?id=10.1371/journal.pcbi.1002028) is given in [code/scripts/doHBIEstimations.py](code/scripts/doHBIEstimations.py).
 
 A report summarizing the results of using of this Bayesian hierarchical estimation to characterize behavioral data from 253 subjects is given [doc/hbiDawRLmodel.pdf](doc/hbiDawRLmodel.pdf).
 
